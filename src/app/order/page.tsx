@@ -1,8 +1,6 @@
-// src/app/order/page.tsx
 "use client";
-
-import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 
 type BustStyle = "classical" | "modern" | "custom";
 type Height = 100 | 150 | 200;
@@ -13,8 +11,10 @@ export default function OrderPage() {
   const [style, setStyle] = useState<BustStyle>("classical");
   const [notes, setNotes] = useState("");
   const [consent, setConsent] = useState(false);
+
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const photoCount = files.length;
   const qualityTier = useMemo(() => {
@@ -28,14 +28,13 @@ export default function OrderPage() {
     if (!list) return;
 
     const picked = Array.from(list);
-    // Keep only images
-    const images = picked.filter((f) => f.type.startsWith("image/"));
-    if (images.length !== picked.length) {
+    const imagesOnly = picked.filter((f) => f.type.startsWith("image/"));
+
+    if (imagesOnly.length !== picked.length) {
       setError("Please upload image files only (JPG/PNG/HEIC).");
     }
 
-    // Limit 12
-    const merged = [...files, ...images].slice(0, 12);
+    const merged = [...files, ...imagesOnly].slice(0, 12);
     setFiles(merged);
   }
 
@@ -43,26 +42,54 @@ export default function OrderPage() {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function submitDisabled() {
-    if (!email.trim()) return true;
-    if (!consent) return true;
-    if (files.length < 3) return true;
-    return false;
-  }
-
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (submitDisabled()) {
-      setError("Please add an email, accept consent, and upload at least 3 photos.");
-      return;
-    }
+    if (!email.trim()) return setError("Please enter your email.");
+    if (!consent) return setError("Please accept consent to continue.");
+    if (files.length < 3 || files.length > 12) return setError("Upload between 3 and 12 photos.");
 
-    // UI-only for now:
-    alert(
-      "Nice! Next step is wiring this form to Supabase + Stripe.\n\nFor now, your UI is ready."
-    );
+    setLoading(true);
+    try {
+      // Build multipart/form-data
+      const fd = new FormData();
+      fd.append("email", email.trim());
+      fd.append("bustSize", String(height)); // API expects bustSize
+      fd.append("style", style);
+      fd.append("notes", notes ?? "");
+
+      // API expects getAll("images")
+      for (const f of files) fd.append("images", f);
+
+      // IMPORTANT: do NOT set Content-Type header here
+      const res = await fetch("/api/orders", {
+  method: "POST",
+  body: fd,
+  headers: {
+    "x-from-formdata-order-page": "1",
+  },
+  // DO NOT set Content-Type manually when using FormData
+});
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data?.error ?? "Failed to create order.");
+        return;
+      }
+
+      if (!data?.orderId) {
+        setError("Order created but no orderId returned.");
+        return;
+      }
+
+      window.location.href = `/order/${data.orderId}`;
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -83,7 +110,6 @@ export default function OrderPage() {
 
       <section className="mx-auto max-w-6xl px-6 pb-14 pt-6">
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          {/* Form */}
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-semibold tracking-tight">Start your order</h1>
             <p className="mt-2 text-sm text-slate-600">
@@ -91,7 +117,6 @@ export default function OrderPage() {
             </p>
 
             <form className="mt-6 space-y-6" onSubmit={onSubmit}>
-              {/* Email */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Email</label>
                 <input
@@ -102,60 +127,27 @@ export default function OrderPage() {
                 />
               </div>
 
-              {/* Size */}
               <div className="space-y-2">
                 <div className="flex items-end justify-between">
                   <label className="text-sm font-medium">Bust height</label>
-                  <span className="text-xs text-slate-500">Measured from base to top</span>
+                  <span className="text-xs text-slate-500">Measured base → top</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <ChoiceCard
-                    title="10 cm"
-                    subtitle="Small"
-                    selected={height === 100}
-                    onClick={() => setHeight(100)}
-                  />
-                  <ChoiceCard
-                    title="15 cm"
-                    subtitle="Classic"
-                    selected={height === 150}
-                    onClick={() => setHeight(150)}
-                  />
-                  <ChoiceCard
-                    title="20 cm"
-                    subtitle="Statement"
-                    selected={height === 200}
-                    onClick={() => setHeight(200)}
-                  />
+                  <ChoiceCard title="10 cm" subtitle="Small" selected={height === 100} onClick={() => setHeight(100)} />
+                  <ChoiceCard title="15 cm" subtitle="Classic" selected={height === 150} onClick={() => setHeight(150)} />
+                  <ChoiceCard title="20 cm" subtitle="Statement" selected={height === 200} onClick={() => setHeight(200)} />
                 </div>
               </div>
 
-              {/* Style */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Style</label>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <ChoiceCard
-                    title="Classical"
-                    subtitle="Museum bust"
-                    selected={style === "classical"}
-                    onClick={() => setStyle("classical")}
-                  />
-                  <ChoiceCard
-                    title="Modern"
-                    subtitle="Clean base"
-                    selected={style === "modern"}
-                    onClick={() => setStyle("modern")}
-                  />
-                  <ChoiceCard
-                    title="Custom"
-                    subtitle="By request"
-                    selected={style === "custom"}
-                    onClick={() => setStyle("custom")}
-                  />
+                  <ChoiceCard title="Classical" subtitle="Museum bust" selected={style === "classical"} onClick={() => setStyle("classical")} />
+                  <ChoiceCard title="Modern" subtitle="Clean base" selected={style === "modern"} onClick={() => setStyle("modern")} />
+                  <ChoiceCard title="Custom" subtitle="By request" selected={style === "custom"} onClick={() => setStyle("custom")} />
                 </div>
               </div>
 
-              {/* Photos */}
               <div className="space-y-2">
                 <div className="flex items-end justify-between">
                   <label className="text-sm font-medium">Photos</label>
@@ -204,7 +196,6 @@ export default function OrderPage() {
                 )}
               </div>
 
-              {/* Notes */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Notes</label>
                 <textarea
@@ -215,7 +206,6 @@ export default function OrderPage() {
                 />
               </div>
 
-              {/* Consent */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <label className="flex items-start gap-3">
                   <input
@@ -239,39 +229,26 @@ export default function OrderPage() {
 
               <button
                 type="submit"
-                disabled={submitDisabled()}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={loading}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                Continue to payment
+                {loading ? "Creating order…" : "Continue to payment"}
               </button>
 
               <p className="text-xs text-slate-500">
-                Next step: payment + generation. You’ll approve a preview before printing.
+                Next steps: Stripe payment → generation preview → print.
               </p>
             </form>
           </div>
 
-          {/* Side guide */}
           <aside className="space-y-4">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <p className="text-sm font-semibold">Photo guide</p>
               <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                <li className="flex gap-2">
-                  <span className="text-emerald-600">✓</span>
-                  Front, 2× three-quarter, left, right (5 photos)
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-emerald-600">✓</span>
-                  Even lighting, no harsh shadows
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-emerald-600">✓</span>
-                  Neutral expression, no filters
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-emerald-600">✓</span>
-                  Hair pulled back if possible
-                </li>
+                <li className="flex gap-2"><span className="text-emerald-600">✓</span>Front, 2× three-quarter, left, right (5 photos)</li>
+                <li className="flex gap-2"><span className="text-emerald-600">✓</span>Even lighting, no harsh shadows</li>
+                <li className="flex gap-2"><span className="text-emerald-600">✓</span>Neutral expression, no filters</li>
+                <li className="flex gap-2"><span className="text-emerald-600">✓</span>Hair pulled back if possible</li>
               </ul>
             </div>
 
@@ -280,9 +257,7 @@ export default function OrderPage() {
               <p className="mt-2 text-sm text-slate-600">
                 Upload → AI reconstruction → bust styling → preview approval → print.
               </p>
-              <p className="mt-3 text-xs text-slate-500">
-                Want maximum likeness? Upload 6–12 photos.
-              </p>
+              <p className="mt-3 text-xs text-slate-500">Want maximum likeness? Upload 6–12 photos.</p>
             </div>
           </aside>
         </div>
