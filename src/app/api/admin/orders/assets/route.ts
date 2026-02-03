@@ -1,4 +1,5 @@
 // src/app/api/admin/orders/assets/route.ts
+// BUILD_SIGNATURE: assets-route-no-archiver-2026-02-03
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
