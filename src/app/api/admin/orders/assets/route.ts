@@ -32,7 +32,10 @@ type OrderRow = {
 
 async function signedUrlOrNull(path: string | null) {
   if (!path) return null;
-  const { data, error } = await supabaseAdmin.storage.from(OUTPUTS_BUCKET).createSignedUrl(path, SIGN_SECONDS);
+  const { data, error } = await supabaseAdmin.storage
+    .from(OUTPUTS_BUCKET)
+    .createSignedUrl(path, SIGN_SECONDS);
+
   if (error) return null;
   return data?.signedUrl ?? null;
 }
@@ -72,33 +75,34 @@ export async function GET(req: Request) {
 
     if (error || !order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-    const payload = {
-      orderId: order.id,
-      status: order.status,
-      email: order.email,
-      bust_height_mm: order.bust_height_mm,
-      bust_style: order.bust_style,
-      filament_color: order.filament_color,
-      shipping: {
-        name: order.ship_name,
-        email: order.ship_email,
-        phone: order.ship_phone,
-        line1: order.ship_line1,
-        line2: order.ship_line2,
-        city: order.ship_city,
-        region: order.ship_region,
-        postal_code: order.ship_postal_code,
-        country: order.ship_country,
+    return NextResponse.json(
+      {
+        orderId: order.id,
+        status: order.status,
+        email: order.email,
+        bust_height_mm: order.bust_height_mm,
+        bust_style: order.bust_style,
+        filament_color: order.filament_color,
+        shipping: {
+          name: order.ship_name,
+          email: order.ship_email,
+          phone: order.ship_phone,
+          line1: order.ship_line1,
+          line2: order.ship_line2,
+          city: order.ship_city,
+          region: order.ship_region,
+          postal_code: order.ship_postal_code,
+          country: order.ship_country,
+        },
+        assets: {
+          preview_url: await signedUrlOrNull(order.clay_preview_path),
+          glb_url: await signedUrlOrNull(order.model_glb_path),
+          obj_url: await signedUrlOrNull(order.model_obj_path),
+        },
+        exported_at: new Date().toISOString(),
       },
-      assets: {
-        preview_url: await signedUrlOrNull(order.clay_preview_path),
-        glb_url: await signedUrlOrNull(order.model_glb_path),
-        obj_url: await signedUrlOrNull(order.model_obj_path),
-      },
-      exported_at: new Date().toISOString(),
-    };
-
-    return NextResponse.json(payload, { status: 200 });
+      { status: 200 }
+    );
   } catch (e: any) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: "Internal error", details: msg }, { status: 500 });
